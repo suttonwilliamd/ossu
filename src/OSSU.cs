@@ -37,6 +37,8 @@ public class Settings {
   if(String.IsNullOrWhiteSpace(Prefix) || Prefix.IndexOfAny(Path.GetInvalidFileNameChars())>=0 || Prefix.EndsWith(".") || Prefix.EndsWith(" ")) throw new ArgumentException("Use a filename prefix without reserved characters or trailing spaces/dots.");
   if(Format!="PNG" && Format!="JPEG" && Format!="BMP") throw new ArgumentException("Choose PNG, JPEG or BMP.");
   if(Quality<1 || Quality>100 || IntervalSeconds<5 || IntervalSeconds>3600) throw new ArgumentException("Invalid quality or shutter interval.");
+  if(Target!="Active window" && Target!="Current monitor" && Target!="All monitors") throw new ArgumentException("Choose a capture target.");
+  if(WindowKey<(int)Keys.F1 || WindowKey>(int)Keys.F12 || DesktopKey<(int)Keys.F1 || DesktopKey>(int)Keys.F12) throw new ArgumentException("Choose valid function keys.");
   if(WindowKey==DesktopKey) throw new ArgumentException("The two hotkeys must differ.");
  }
 }
@@ -91,10 +93,10 @@ public class MainForm : Form {
  Settings settings; TextBox folder=new TextBox(),prefix=new TextBox(); ComboBox format=new ComboBox(),target=new ComboBox(),windowKey=new ComboBox(),desktopKey=new ComboBox();
  NumericUpDown quality=new NumericUpDown(),interval=new NumericUpDown(); CheckBox sequence=new CheckBox(),crop=new CheckBox();
  Label status=new Label(); Button auto=new Button(); PictureBox preview=new PictureBox(); ListBox recent=new ListBox();
- NotifyIcon tray; System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer(); bool busy,closing,registered; string configPath;
+ NotifyIcon tray; System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer(); bool busy,closing,registered,testMode; string configPath;
  List<string> files=new List<string>();
  public MainForm(bool test) {
-  configPath=test?null:Settings.Location;
+  testMode=test;configPath=test?null:Settings.Location;
   string loadError=null; try {settings=test?new Settings():Settings.Load(configPath);} catch(Exception e) {settings=new Settings(); loadError="Settings unreadable; defaults loaded: "+e.Message;}
   Text="OSSU - Open Source Screenshot Utility"; ClientSize=new Size(680,640); MinimumSize=new Size(650,660); Font=new Font("Segoe UI",9); AutoScaleMode=AutoScaleMode.None;
   var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(16),ColumnCount=3,RowCount=12};
@@ -131,7 +133,7 @@ public class MainForm : Form {
    bool a=Native.RegisterHotKey(Handle,1,0x4006,(uint)s.WindowKey);bool b=Native.RegisterHotKey(Handle,2,0x4006,(uint)s.DesktopKey);
    if(!a||!b) {Native.UnregisterHotKey(Handle,1);Native.UnregisterHotKey(Handle,2);StopAuto();status.Text="Hotkey unavailable. Choose different keys and Apply; neither hotkey is active.";return false;}
    registered=true;settings=s;if(configPath!=null)s.Save(configPath);timer.Interval=s.IntervalSeconds*1000;status.Text="Settings saved. Hotkeys active.";return true;
-  }catch(Exception e){status.Text=e.Message;return false;}
+  }catch(Exception e){Native.UnregisterHotKey(Handle,1);Native.UnregisterHotKey(Handle,2);registered=false;StopAuto();status.Text=e.Message;return false;}
  }
  void ToggleAuto(){if(timer.Enabled){StopAuto();return;}if(!Apply())return;timer.Start();auto.Text="Stop auto";status.Text="AUTO SHUTTER ON: captures selected target until stopped.";if(tray!=null)tray.Text="OSSU - AUTO SHUTTER ON";}
  void StopAuto(){timer.Stop();auto.Text="Start auto";if(tray!=null)tray.Text="OSSU - ready";}
@@ -142,6 +144,7 @@ public class MainForm : Form {
    if(IsDisposed)return;files.Insert(0,path);recent.Items.Insert(0,Path.GetFileName(path));if(files.Count>30){files.RemoveAt(30);recent.Items.RemoveAt(30);}recent.SelectedIndex=0;status.Text="Saved "+Path.GetFileName(path);if(tray!=null)tray.Text=timer.Enabled?"OSSU - AUTO SHUTTER ON":"OSSU - captured";
   }catch(Exception e){if(!IsDisposed){status.Text="Capture failed: "+e.Message;StopAuto();}}finally{busy=false;}
  }
+ protected override bool ShowWithoutActivation {get{return testMode;}}
  protected override void WndProc(ref Message m){if(m.Msg==0x312 && registered){var unused=Take(m.WParam.ToInt32()==2?"All monitors":settings.Target);}base.WndProc(ref m);}
  protected override void Dispose(bool disposing){if(disposing){timer.Dispose();if(IsHandleCreated){Native.UnregisterHotKey(Handle,1);Native.UnregisterHotKey(Handle,2);}if(tray!=null){tray.Visible=false;tray.Dispose();}if(preview.Image!=null)preview.Image.Dispose();}base.Dispose(disposing);}
 }
